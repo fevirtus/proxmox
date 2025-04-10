@@ -9,7 +9,7 @@
 set -Eeuo pipefail
 
 # ========== Config ==========
-TEMPLATE="debian-12-standard_20240109.tar.zst"
+TEMPLATE="debian-12-standard"
 TEMPLATE_STORAGE="local"
 STORAGE="local-lvm"
 BRIDGE="vmbr0"
