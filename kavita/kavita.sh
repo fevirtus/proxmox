@@ -46,7 +46,7 @@ msg_ok "Đã sẵn sàng template"
 msg_info "Tạo container $HOSTNAME ($VMID)"
 pct create $VMID $TEMPLATE_STORAGE:vztmpl/$TEMPLATE \
   -hostname $HOSTNAME \
-  -rootfs $STORAGE:$DISK_SIZE \
+  -rootfs $STORAGE:size=$DISK_SIZE \
   -memory $RAM \
   -cores $CPUS \
   -net0 name=eth0,bridge=$BRIDGE,ip=dhcp \
