@@ -2,89 +2,53 @@
 
 set -e
 
-echo "🚀 Bắt đầu cài đặt Docker + Rclone + Kavita..."
+# ====== CẤU HÌNH MẶC ĐỊNH ====== #
+HOSTNAME="kavita"
+PASSWORD="kavitapass"
+STORAGE="local-lvm"
+DISK_SIZE="8G"
+RAM="2048"
+CPU_CORES=2
+NET_BRIDGE="vmbr0"
+TEMPLATE_NAME="ubuntu-22.04-standard_20240110.tar.zst"
+TEMPLATE_PATH="local:vztmpl/$TEMPLATE_NAME"
+# =============================== #
 
-# 1. Cập nhật hệ thống
-apt update && apt upgrade -y
+echo "📦 Tạo LXC Proxmox + Cài đặt Kavita bên trong..."
 
-# 2. Cài đặt Docker
-echo "🐳 Đang cài Docker..."
-apt install -y curl ca-certificates gnupg lsb-release apt-transport-https software-properties-common
+# Tự động tìm VMID chưa dùng
+NEXTID=$(pvesh get /cluster/nextid)
+echo "🆔 Dùng VMID $NEXTID"
 
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-add-apt-repository \
-   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
-   $(lsb_release -cs) \
-   stable"
+# Kiểm tra template đã có chưa
+if ! pct list | grep -q "$TEMPLATE_NAME" && ! ls /var/lib/vz/template/cache/$TEMPLATE_NAME &>/dev/null; then
+  echo "⬇️ Chưa có template $TEMPLATE_NAME. Đang tải..."
+  pveam update
+  pveam download local $TEMPLATE_NAME
+fi
 
-apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-compose
+# Tạo container
+pct create $NEXTID $TEMPLATE_PATH \
+  -hostname $HOSTNAME \
+  -storage $STORAGE \
+  -rootfs $DISK_SIZE \
+  -memory $RAM \
+  -cores $CPU_CORES \
+  -net0 name=eth0,bridge=$NET_BRIDGE,ip=dhcp \
+  -features nesting=1,fuse=1,keyctl=1,mount=1 \
+  -password $PASSWORD \
+  -unprivileged 0 \
+  -onboot 1
 
-# 3. Cài đặt Rclone
-echo "🔗 Đang cài Rclone..."
-curl https://rclone.org/install.sh | bash
+pct start $NEXTID
+echo "🚀 Đã tạo và khởi động container $NEXTID ($HOSTNAME)"
 
-# 4. Tạo remote Google Drive (hướng dẫn thủ công)
-echo "🌐 Vui lòng cấu hình kết nối Google Drive (sẽ cần trình duyệt)"
-rclone config
+# Đẩy script cài Kavita vào LXC
+INSTALL_SCRIPT="/root/kavita_install_inner.sh"
 
-# 5. Mount Google Drive
-echo "📂 Mount Google Drive vào /mnt/gdrive/books"
-mkdir -p /mnt/gdrive/books
+pct exec $NEXTID -- bash -c "apt update && apt install -y curl"
 
-# Lưu service systemd để mount tự động sau reboot
-echo "🛠️ Tạo systemd service cho rclone mount..."
+pct exec $NEXTID -- bash -c "curl -fsSL https://raw.githubusercontent.com/fevirtus/proxmox/main/kavita/kavita_inner.sh -o $INSTALL_SCRIPT"
+pct exec $NEXTID -- bash -c "chmod +x $INSTALL_SCRIPT && $INSTALL_SCRIPT"
 
-cat <<EOF > /etc/systemd/system/rclone-gdrive-books.service
-[Unit]
-Description=Rclone Mount Google Drive to /mnt/gdrive/books
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/rclone mount gdrive:/Books /mnt/gdrive/books \\
-  --allow-other \\
-  --dir-cache-time 72h \\
-  --vfs-cache-mode full \\
-  --vfs-cache-max-size 2G \\
-  --vfs-read-chunk-size 64M \\
-  --poll-interval 15s \\
-  --umask 002
-
-ExecStop=/bin/fusermount -u /mnt/gdrive/books
-Restart=on-failure
-User=root
-
-[Install]
-WantedBy=default.target
-EOF
-
-systemctl daemon-reexec
-systemctl daemon-reload
-systemctl enable --now rclone-gdrive-books
-
-# 6. Tạo thư mục Kavita
-echo "📁 Tạo thư mục Kavita..."
-mkdir -p /opt/kavita/config
-
-# 7. Tạo file docker-compose.yml
-echo "📦 Tạo docker-compose.yml..."
-cat <<EOF > /opt/kavita/docker-compose.yml
-version: "3.3"
-services:
-  kavita:
-    image: kizaing/kavita:latest
-    container_name: kavita
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./config:/kavita/config
-      - /mnt/gdrive/books:/kavita/manga
-    restart: unless-stopped
-EOF
-
-# 8. Khởi động Kavita
-cd /opt/kavita
-docker-compose up -d
-
-echo "✅ Đã hoàn tất cài đặt!"
-echo "📚 Truy cập Kavita tại: http://<IP-LXC>:5000"
+echo "✅ Hoàn tất! Truy cập Kavita tại: http://<IP-LXC>:5000"
