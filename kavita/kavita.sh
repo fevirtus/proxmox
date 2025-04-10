@@ -9,7 +9,7 @@
 set -Eeuo pipefail
 
 # ========== Config ==========
-TEMPLATE="ubuntu-22.04-standard_20240110.tar.zst"
+TEMPLATE="debian-12-standard_20240109.tar.zst"
 TEMPLATE_STORAGE="local"
 STORAGE="local-lvm"
 BRIDGE="vmbr0"
@@ -37,9 +37,9 @@ VMID=$(pvesh get /cluster/nextid)
 msg_ok "Sử dụng VMID $VMID"
 
 msg_info "Kiểm tra template Ubuntu"
-if ! ls /var/lib/vz/template/cache/$TEMPLATE &>/dev/null; then
+if [ ! -f "/var/lib/vz/template/cache/$TEMPLATE" ]; then
   pveam update
-  pveam download $TEMPLATE_STORAGE $TEMPLATE
+  pveam download $TEMPLATE_STORAGE ${TEMPLATE%%_*}
 fi
 msg_ok "Đã sẵn sàng template"
 
